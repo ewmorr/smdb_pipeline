@@ -30,7 +30,7 @@ conda_init() {
 
 # --- EDIT if needed: SLURM options added to every sbatch call (account, QOS ...)
 #     e.g. SBATCH_COMMON="--account=frey_lab --qos=normal"
-SBATCH_COMMON="--share"
+SBATCH_COMMON="--mail-user=eric.morrison@unh.edu --mail-type=END,FAIL"
 
 # --- Kraken2 memory mode -------------------------------------------------------
 # "ram"  : load the whole ~280 GB hash into memory. Fastest. Needs your 515 GB nodes.
@@ -38,9 +38,9 @@ SBATCH_COMMON="--share"
 #          hash is read from disk on demand. Copying to node-local disk helps (see below).
 KRAKEN_MODE="ram"
 KRAKEN_MEM="340G"          # for "ram" mode; use ~240G for "mmap" on 257 GB nodes
-KRAKEN_CPUS=32
+KRAKEN_CPUS=24
 KRAKEN_TIME="12:00:00"
-KRAKEN_PARTITION=""        # e.g. "bigmem" if 515 GB nodes are in their own partition
+KRAKEN_PARTITION="shared"        # e.g. "bigmem" if 515 GB nodes are in their own partition
 KRAKEN_CONSTRAINT=""       # e.g. "mem512" if your site tags big nodes with a feature
 KRAKEN_MAX_PARALLEL=2      # how many Kraken2 jobs may run at once (each holds a big node)
 
