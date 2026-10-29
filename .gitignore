@@ -1,0 +1,7 @@
+# Ignore the data folder
+data/
+
+# Ignore the figures folder
+figures/
+figures_old_snp_sets/
+.Rproj.user

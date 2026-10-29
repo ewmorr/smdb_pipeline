@@ -12,7 +12,10 @@ Writes to 04_summary/:
                                       and fungal share of all and of classified reads
                                       (before and after Architeuthis filtering)
   bracken_<L>_all_taxa_long.tsv       every Bracken taxon, every sample, with lineage + fungal flag
-  fungi_<L>_reads.tsv                 fungal taxa x samples, Bracken estimated reads
+  fungi_<L>_reads.tsv                 fungal taxa x samples, Bracken estimated reads (new_est_reads:
+                                      direct assignments PLUS reads Bracken redistributed from higher ranks)
+  fungi_<L>_direct_reads.tsv          fungal taxa x samples, reads Kraken2 assigned DIRECTLY to the taxon
+                                      after Architeuthis filtering (Bracken's kraken_assigned_reads column)
   fungi_<L>_relabund_within_fungi.tsv fungal taxa x samples, share of fungal reads (columns sum to 1)
   fungi_<L>_share_of_all_taxa.tsv       fungal taxa x samples, share of ALL taxa (bacteria too) that Bracken estimated at that rank
 
@@ -131,26 +134,42 @@ def main():
     tax = build_lineages(lineage_sources)
 
     # ---- kingdom-level summary
+    # The Architeuthis-filtered report contains ONLY reads that passed the filter: unclassified
+    # reads and rejected reads are gone. So the sample's true read total must come from the
+    # raw Kraken2 report. (Kraken2 counts each read pair as one "read" with --paired.)
     rows = []
     for s in samples:
         f = clade_counts(filt_reports[s])
-        r = clade_counts(raw_reports[s]) if os.path.exists(raw_reports[s]) else defaultdict(int)
+        if os.path.exists(raw_reports[s]):
+            r = clade_counts(raw_reports[s])
+        else:
+            print(f"WARNING: no raw Kraken2 report for {s}; total-read columns will be NA", file=sys.stderr)
+            r = defaultdict(int)
+        total = r["total"]
         rows.append([
-            s, f["total"], f["classified"], f["Bacteria"], f["Archaea"], f["Eukaryota"], f["Fungi"],
-            pct(f["Fungi"], f["total"]), pct(f["Fungi"], f["classified"]), pct(f["Fungi"], f["Eukaryota"]),
-            r["classified"], r["Fungi"], pct(r["Fungi"], r["total"]),
+            s,
+            total, r["classified"], pct(r["classified"], total),
+            r["Fungi"], pct(r["Fungi"], total), pct(r["Fungi"], r["classified"]),
+            f["classified"], pct(f["classified"], r["classified"]),
+            f["Bacteria"], f["Archaea"], f["Eukaryota"], f["Fungi"], pct(f["Fungi"], r["Fungi"]),
+            pct(f["Fungi"], f["classified"]), pct(f["Fungi"], f["Eukaryota"]), pct(f["Fungi"], total),
         ])
     write_tsv(os.path.join(sdir, "kingdom_summary.tsv"),
-              ["sample", "total_reads", "classified_reads", "bacteria_reads", "archaea_reads",
-               "eukaryota_reads", "fungi_reads", "fungi_pct_of_total", "fungi_pct_of_classified",
-               "fungi_pct_of_eukaryota", "unfiltered_classified_reads", "unfiltered_fungi_reads",
-               "unfiltered_fungi_pct_of_total"], rows)
+              ["sample",
+               "total_read_pairs", "kraken_classified", "kraken_classified_pct_of_total",
+               "kraken_fungi", "kraken_fungi_pct_of_total", "kraken_fungi_pct_of_classified",
+               "filtered_classified", "filtered_pct_of_kraken_classified_retained",
+               "filtered_bacteria", "filtered_archaea", "filtered_eukaryota", "filtered_fungi",
+               "filtered_fungi_pct_retained",
+               "filtered_fungi_pct_of_filtered_classified", "filtered_fungi_pct_of_eukaryota",
+               "filtered_fungi_pct_of_total_read_pairs"], rows)
 
     # ---- Bracken tables per rank
     for lvl in args.levels.split():
         long_rows = []
         fungi_reads = defaultdict(dict)    # taxid -> sample -> reads
         fungi_frac_all = defaultdict(dict)
+        fungi_direct = defaultdict(dict)   # taxid -> sample -> kraken_assigned_reads
         found_any = False
         for s in samples:
             path = os.path.join(bdir, f"{s}_{lvl}.bracken")
@@ -169,6 +188,7 @@ def main():
                     if t["in_fungi"]:
                         fungi_reads[tid][s] = reads
                         fungi_frac_all[tid][s] = frac
+                        fungi_direct[tid][s] = int(rec["kraken_assigned_reads"])
         if not found_any:
             continue
         write_tsv(os.path.join(sdir, f"bracken_{lvl}_all_taxa_long.tsv"),
@@ -186,6 +206,8 @@ def main():
 
         write_tsv(os.path.join(sdir, f"fungi_{lvl}_reads.tsv"), head,
                   wide(lambda t, s: fungi_reads[t].get(s, 0)))
+        write_tsv(os.path.join(sdir, f"fungi_{lvl}_direct_reads.tsv"), head,
+                  wide(lambda t, s: fungi_direct[t].get(s, 0)))
         write_tsv(os.path.join(sdir, f"fungi_{lvl}_relabund_within_fungi.tsv"), head,
                   wide(lambda t, s: f"{fungi_reads[t].get(s, 0) / fungal_totals[s]:.6g}"
                        if fungal_totals[s] else "0"))
